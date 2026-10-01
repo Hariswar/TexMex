@@ -1,0 +1,8 @@
+project_id = "texmex"
+
+# Both functions authenticate requests themselves (shared secret / per-log token).
+[functions.dispatch]
+verify_jwt = false
+
+[functions.action]
+verify_jwt = false
