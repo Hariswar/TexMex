@@ -18,8 +18,8 @@ export default defineConfig({
         name: 'TexMex — scheduled messages',
         short_name: 'TexMex',
         description: 'Schedule WhatsApp and Telegram messages with one-tap reminders.',
-        theme_color: '#16a34a',
-        background_color: '#0c1210',
+        theme_color: '#0f766e',
+        background_color: '#090e0d',
         display: 'standalone',
         start_url: '/',
         icons: [

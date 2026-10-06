@@ -105,8 +105,9 @@ describe('schedule form mapping', () => {
   });
 
   it('describes schedules', () => {
-    expect(describeSchedule({ rrule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', start_date: '2026-10-01', send_time: '14:00:00' })).toMatch(/^Weekdays at 2:00/);
-    expect(describeSchedule({ rrule: 'FREQ=WEEKLY;BYDAY=TU,TH', start_date: '2026-10-01', send_time: '07:30' })).toMatch(/^Tue, Thu at 7:30/);
+    expect(describeSchedule({ rrule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', start_date: '2026-10-01', send_time: '14:00:00' })).toMatch(/^Weekdays · 2:00/);
+    expect(describeSchedule({ rrule: 'FREQ=WEEKLY;BYDAY=TU,TH', start_date: '2026-10-01', send_time: '07:30' })).toMatch(/^Tue, Thu · 7:30/);
+    expect(describeSchedule({ rrule: 'FREQ=MONTHLY', start_date: '2026-10-22', send_time: '10:00' })).toMatch(/^Monthly, 22nd · 10:00/);
   });
 });
 

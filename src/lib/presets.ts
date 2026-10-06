@@ -1,8 +1,9 @@
+import { AlarmClock, CalendarDays, Dumbbell, MessageCircle, Receipt, Sun, type LucideIcon } from 'lucide-react';
 import type { RepeatKind } from './scheduleForm';
 
 export interface Preset {
   label: string;
-  emoji: string;
+  icon: LucideIcon;
   title: string;
   message_template: string;
   kind: RepeatKind;
@@ -14,7 +15,7 @@ export interface Preset {
 export const PRESETS: Preset[] = [
   {
     label: 'Good morning',
-    emoji: '☀️',
+    icon: Sun,
     title: 'Good morning',
     message_template: '{Good morning|Morning|GM} {first_name}! {☀️|🌞|Have a great {day}!}',
     kind: 'daily',
@@ -22,7 +23,7 @@ export const PRESETS: Preset[] = [
   },
   {
     label: 'Check in',
-    emoji: '💬',
+    icon: MessageCircle,
     title: 'Check in',
     message_template: '{Hey|Hi} {first_name}, {how’s your week going?|how have you been?|what’s new with you?}',
     kind: 'weekly',
@@ -31,7 +32,7 @@ export const PRESETS: Preset[] = [
   },
   {
     label: 'Weekend plans',
-    emoji: '📅',
+    icon: CalendarDays,
     title: 'Weekend plans',
     message_template: '{Free this weekend?|Any plans this weekend?|Want to hang out this weekend?}',
     kind: 'weekly',
@@ -40,7 +41,7 @@ export const PRESETS: Preset[] = [
   },
   {
     label: 'Bill reminder',
-    emoji: '🧾',
+    icon: Receipt,
     title: 'Bill reminder',
     message_template: 'Hey {first_name}, reminder that bills are due. {Can you send your share?|Mind sending your part today?}',
     kind: 'monthly',
@@ -48,7 +49,7 @@ export const PRESETS: Preset[] = [
   },
   {
     label: 'Workout invite',
-    emoji: '🏋️',
+    icon: Dumbbell,
     title: 'Workout invite',
     message_template: '{Gym at 2?|Working out today at 2?|Down for a workout at 2?}',
     kind: 'weekdays',
@@ -56,7 +57,7 @@ export const PRESETS: Preset[] = [
   },
   {
     label: 'One-time reminder',
-    emoji: '⏰',
+    icon: AlarmClock,
     title: 'Reminder',
     message_template: 'Hey {first_name}, just a reminder: ',
     kind: 'once',

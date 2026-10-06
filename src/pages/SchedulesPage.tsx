@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Badge, EmptyState, ErrorText, Spinner } from '../components/ui';
+import { Bell, CalendarClock, PencilLine, Plus, Send, UserPlus, Zap } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Avatar, Badge, EmptyState, ErrorText, Spinner, Switch } from '../components/ui';
 import { renderTemplate, templateVars } from '../../supabase/functions/_shared/template.ts';
 import { nextRunAt } from '../../supabase/functions/_shared/recurrence.ts';
 import { whatsappLink } from '../../supabase/functions/_shared/whatsapp.ts';
@@ -13,20 +14,33 @@ interface Props {
   profile: Profile;
   recipients: Recipient[];
   onGoToContacts: () => void;
+  setSubtitle: (node: ReactNode) => void;
 }
 
-export function formatNextRun(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  const mins = Math.round((d.getTime() - Date.now()) / 60_000);
-  const when = d.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-  if (mins < 1) return `${when} (now)`;
-  if (mins < 60) return `${when} (in ${mins} min)`;
-  if (mins < 48 * 60) return `${when} (in ${Math.round(mins / 60)} h)`;
-  return d.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+export function relativeTime(iso: string): string {
+  const mins = Math.round((new Date(iso).getTime() - Date.now()) / 60_000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `in ${mins} min`;
+  if (mins < 48 * 60) return `in ${Math.round(mins / 60)} h`;
+  return `in ${Math.round(mins / 1440)} days`;
 }
 
-export default function SchedulesPage({ profile, recipients, onGoToContacts }: Props) {
+export function dayWord(d: Date): string {
+  const today = new Date();
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((startOf(d) - startOf(today)) / 86_400_000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff < 7) return d.toLocaleDateString([], { weekday: 'long' });
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function sampleMessage(s: Schedule, r: Recipient | undefined): string {
+  const at = s.next_run_at ? new Date(s.next_run_at) : new Date();
+  return renderTemplate(s.message_template, templateVars(r?.display_name ?? 'there', at, s.timezone), () => 0);
+}
+
+export default function SchedulesPage({ profile, recipients, onGoToContacts, setSubtitle }: Props) {
   const [schedules, setSchedules] = useState<Schedule[] | null>(null);
   const [editing, setEditing] = useState<ScheduleDraft | null>(null);
   const [error, setError] = useState('');
@@ -46,6 +60,17 @@ export default function SchedulesPage({ profile, recipients, onGoToContacts }: P
   }, [load]);
 
   const byId = useMemo(() => new Map(recipients.map((r) => [r.id, r])), [recipients]);
+  const upNext = schedules?.find((s) => s.active && s.next_run_at);
+  const activeCount = schedules?.filter((s) => s.active).length ?? 0;
+
+  useEffect(() => {
+    if (!schedules) return;
+    setSubtitle(
+      schedules.length === 0
+        ? 'Nothing scheduled yet'
+        : `${activeCount} active${upNext?.next_run_at ? ` · next ${relativeTime(upNext.next_run_at)}` : ''}`,
+    );
+  }, [schedules, activeCount, upNext, setSubtitle]);
 
   function startNew(preset?: Preset) {
     const draft = emptyDraft(recipients[0]?.id ?? '');
@@ -54,14 +79,15 @@ export default function SchedulesPage({ profile, recipients, onGoToContacts }: P
     setEditing({ ...draft, title, message_template, kind, send_time, days });
   }
 
-  async function toggleActive(s: Schedule) {
+  async function setActive(s: Schedule, resume: boolean) {
     setError('');
-    const resume = !s.active;
     const next = resume ? nextRunAt(s, new Date()) : null;
     if (resume && !next) {
-      setError('That one-time message is in the past. Edit it to pick a new time.');
+      setError('That one-time message is in the past. Open it to pick a new time.');
       return;
     }
+    // Optimistic update so the switch responds instantly.
+    setSchedules((prev) => prev?.map((x) => (x.id === s.id ? { ...x, active: resume, next_run_at: next?.toISOString() ?? x.next_run_at } : x)) ?? null);
     const { error } = await supabase
       .from('schedules')
       .update(resume ? { active: true, next_run_at: next!.toISOString(), retry_count: 0 } : { active: false })
@@ -81,83 +107,99 @@ export default function SchedulesPage({ profile, recipients, onGoToContacts }: P
 
   if (!recipients.length) {
     return (
-      <EmptyState icon="👋" title="Add who you message first">
+      <EmptyState icon={UserPlus} title="Add who you message first">
         <p>Add a person or a group, then schedule any message to them: reminders, check-ins, greetings, anything.</p>
-        <button className="btn-primary mt-4" onClick={onGoToContacts}>
-          Add a contact
+        <button className="btn-primary mt-5" onClick={onGoToContacts}>
+          <UserPlus className="size-4.5" aria-hidden /> Add a contact
         </button>
       </EmptyState>
     );
   }
 
   return (
-    <div className="space-y-5">
-      <section>
-        <h2 className="mb-2 text-sm font-semibold tracking-wide text-stone-500 uppercase dark:text-stone-400">Quick start</h2>
-        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+    <div className="space-y-7 pb-20">
+      {upNext?.next_run_at && <UpNextCard s={upNext} r={byId.get(upNext.recipient_id)} onSend={() => sendNow(upNext)} onEdit={() => setEditing(scheduleToDraft(upNext))} />}
+
+      <section aria-labelledby="quick-start">
+        <h2 id="quick-start" className="section-title">
+          Quick start
+        </h2>
+        <div className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 scrollbar-none">
           {PRESETS.map((p) => (
-            <button key={p.label} className="btn-secondary shrink-0 rounded-full" onClick={() => startNew(p)}>
-              <span>{p.emoji}</span> {p.label}
+            <button
+              key={p.label}
+              className="flex min-h-11 shrink-0 snap-start items-center gap-2 rounded-full border border-line bg-surface py-2 pr-4 pl-2.5 text-sm font-semibold transition-colors duration-150 hover:bg-surface-2"
+              onClick={() => startNew(p)}
+            >
+              <span className="flex size-7 items-center justify-center rounded-full bg-primary-soft text-primary-ink">
+                <p.icon className="size-4" aria-hidden />
+              </span>
+              {p.label}
             </button>
           ))}
-          <button className="btn-secondary shrink-0 rounded-full" onClick={() => startNew()}>
-            ✏️ Blank
-          </button>
         </div>
       </section>
 
       <ErrorText>{error}</ErrorText>
 
-      {schedules.length === 0 ? (
-        <EmptyState icon="🗓️" title="No scheduled messages yet">
-          Pick a quick-start above or tap + to write your own.
-        </EmptyState>
-      ) : (
-        <ul className="space-y-3">
-          {schedules.map((s) => {
-            const r = byId.get(s.recipient_id);
-            return (
-              <li key={s.id} className={`card ${s.active ? '' : 'opacity-60'}`}>
-                <button className="block w-full text-left" onClick={() => setEditing(scheduleToDraft(s))}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold">{s.title || `Message ${r?.display_name ?? ''}`}</p>
-                      <p className="text-sm text-stone-500 dark:text-stone-400">
-                        to {r?.display_name ?? 'unknown'} {r?.type === 'group' && '(group)'} · {describeSchedule(s)}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
-                      {!s.active && <Badge>{s.next_run_at || s.rrule ? 'Paused' : 'Done'}</Badge>}
-                      <Badge color={s.delivery_mode === 'telegram' ? 'blue' : 'green'}>
-                        {s.delivery_mode === 'telegram' ? 'Telegram · auto' : 'WhatsApp · 1 tap'}
-                      </Badge>
-                    </div>
-                  </div>
-                  <p className="mt-2 line-clamp-2 rounded-xl bg-stone-100 px-3 py-2 font-mono text-sm dark:bg-stone-800">
-                    {s.message_template}
-                  </p>
-                  {s.active && <p className="mt-2 text-sm">⏰ Next: {formatNextRun(s.next_run_at)}</p>}
-                </button>
-                <div className="mt-3 flex flex-wrap gap-2 border-t border-stone-100 pt-3 dark:border-stone-800">
-                  <button className="btn-secondary py-1.5" onClick={() => sendNow(s)}>
-                    Send now
+      <section aria-labelledby="all-messages">
+        <h2 id="all-messages" className="section-title">
+          All messages
+        </h2>
+        {schedules.length === 0 ? (
+          <EmptyState icon={CalendarClock} title="No scheduled messages yet">
+            Pick a quick start above, or tap <strong className="text-fg">New</strong> to write your own.
+          </EmptyState>
+        ) : (
+          <ul className="card divide-y divide-line overflow-hidden">
+            {schedules.map((s) => {
+              const r = byId.get(s.recipient_id);
+              const name = s.title || `Message ${r?.display_name ?? ''}`;
+              const done = !s.active && !s.rrule && !s.next_run_at;
+              return (
+                <li key={s.id} className="flex items-center gap-1 pr-2">
+                  <button
+                    className="flex min-w-0 flex-1 items-center gap-3 py-3.5 pl-4 text-left transition-colors duration-150 active:bg-surface-2"
+                    onClick={() => setEditing(scheduleToDraft(s))}
+                    aria-label={`Edit ${name}`}
+                  >
+                    <span className={s.active ? '' : 'opacity-50'}>
+                      <Avatar name={r?.display_name ?? '?'} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <span className={`truncate font-semibold ${s.active ? '' : 'text-muted'}`}>{name}</span>
+                        {done ? <Badge>Done</Badge> : !s.active && <Badge tone="warn">Paused</Badge>}
+                      </span>
+                      <span className="block truncate text-sm font-medium">{describeSchedule(s)}</span>
+                      <span className="mt-0.5 flex items-center gap-1.5 truncate text-[13px] text-muted">
+                        {s.delivery_mode === 'telegram' ? (
+                          <Zap className="size-3.5 shrink-0 text-info" aria-hidden />
+                        ) : (
+                          <Bell className="size-3.5 shrink-0 text-primary-ink" aria-hidden />
+                        )}
+                        <span className="truncate">
+                          {r?.display_name ?? 'Unknown'} · {s.delivery_mode === 'telegram' ? 'Telegram auto' : 'Reminder'}
+                        </span>
+                      </span>
+                    </span>
                   </button>
-                  <button className="btn-ghost py-1.5" onClick={() => toggleActive(s)}>
-                    {s.active ? 'Pause' : 'Resume'}
+                  <button className="icon-btn" onClick={() => sendNow(s)} aria-label={`Send ${name} now in WhatsApp`} title="Send now">
+                    <Send className="size-5" />
                   </button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                  {!done && <Switch checked={s.active} onChange={(v) => setActive(s, v)} label={`${name} active`} />}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       <button
-        className="btn-primary fixed right-4 bottom-24 z-20 h-14 w-14 rounded-full p-0 text-2xl shadow-lg sm:right-[max(1rem,calc(50%-20rem))]"
+        className="btn-primary fixed right-4 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] z-20 h-14 rounded-2xl px-5 shadow-lg shadow-primary/25 sm:right-[max(1rem,calc(50%-20rem))]"
         onClick={() => startNew()}
-        aria-label="New scheduled message"
       >
-        +
+        <Plus className="size-5" aria-hidden /> New
       </button>
 
       {editing && (
@@ -173,5 +215,41 @@ export default function SchedulesPage({ profile, recipients, onGoToContacts }: P
         />
       )}
     </div>
+  );
+}
+
+function UpNextCard({ s, r, onSend, onEdit }: { s: Schedule; r: Recipient | undefined; onSend: () => void; onEdit: () => void }) {
+  const at = new Date(s.next_run_at!);
+  return (
+    <section aria-label="Up next" className="card overflow-hidden">
+      <div className="flex items-start justify-between gap-3 px-4 pt-4">
+        <div>
+          <p className="text-[13px] font-semibold tracking-wide text-primary-ink uppercase">Up next · {relativeTime(s.next_run_at!)}</p>
+          <p className="mt-1 text-3xl font-extrabold tracking-tight">
+            {at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+          </p>
+          <p className="text-sm font-medium text-muted">{dayWord(at)}</p>
+        </div>
+        <div className="flex min-w-0 items-center gap-2 rounded-full bg-surface-2 py-1 pr-3 pl-1">
+          <Avatar name={r?.display_name ?? '?'} size="sm" />
+          <span className="truncate text-sm font-semibold">{r?.display_name}</span>
+        </div>
+      </div>
+
+      <div className="mx-4 mt-4 rounded-2xl bg-surface-2 p-3">
+        <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-tr-md bg-bubble px-3.5 py-2 text-[15px] leading-snug text-bubble-fg shadow-sm">
+          {sampleMessage(s, r)}
+        </div>
+      </div>
+
+      <div className="flex gap-2 p-4">
+        <button className="btn-primary flex-1" onClick={onSend}>
+          <Send className="size-4.5" aria-hidden /> Send now
+        </button>
+        <button className="btn-secondary" onClick={onEdit}>
+          <PencilLine className="size-4.5" aria-hidden /> Edit
+        </button>
+      </div>
+    </section>
   );
 }

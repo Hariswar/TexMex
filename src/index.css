@@ -1,51 +1,167 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/plus-jakarta-sans';
 
-@theme {
-  --color-brand-50: #f0fdf4;
-  --color-brand-100: #dcfce7;
-  --color-brand-500: #22c55e;
-  --color-brand-600: #16a34a;
-  --color-brand-700: #15803d;
+/* Semantic color tokens. Components use these (bg-surface, text-muted, …), never raw hex. */
+:root {
+  --bg: #f4f6f5;
+  --surface: #ffffff;
+  --surface-2: #eef2f1;
+  --line: #dfe6e4;
+  --fg: #0f1f1c;
+  --muted: #586967;
+  --primary: #0f766e;
+  --primary-hover: #0b5f58;
+  --on-primary: #ffffff;
+  --primary-soft: #e2f3f0;
+  --primary-ink: #0a5650;
+  --success: #15803d;
+  --success-soft: #e3f5e8;
+  --info: #1d4ed8;
+  --info-soft: #e7eefd;
+  --warn: #a15c07;
+  --warn-soft: #fcf0de;
+  --danger: #b91c1c;
+  --danger-soft: #fdeaea;
+  --bubble: #d9fdd3;
+  --bubble-fg: #111b21;
+  --scrim: rgb(8 15 14 / 0.5);
+  color-scheme: light;
 }
 
-:root {
-  color-scheme: light dark;
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #090e0d;
+    --surface: #121917;
+    --surface-2: #1a2320;
+    --line: #26322f;
+    --fg: #e5eeec;
+    --muted: #9aaca8;
+    --primary: #2dd4bf;
+    --primary-hover: #5eead4;
+    --on-primary: #03211d;
+    --primary-soft: #0e2d29;
+    --primary-ink: #5eead4;
+    --success: #4ade80;
+    --success-soft: #0f2a19;
+    --info: #93b4ff;
+    --info-soft: #142040;
+    --warn: #fbbf24;
+    --warn-soft: #2d220f;
+    --danger: #f87171;
+    --danger-soft: #341515;
+    --bubble: #005c4b;
+    --bubble-fg: #e9edef;
+    --scrim: rgb(0 0 0 / 0.65);
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --font-sans: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-ink: var(--primary-ink);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-bubble: var(--bubble);
+  --color-bubble-fg: var(--bubble-fg);
+  --color-scrim: var(--scrim);
+}
+
+html {
   -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  @apply bg-stone-50 text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100;
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  @apply bg-bg font-sans text-fg antialiased;
+}
+
+/* Fieldsets default to min-width: min-content, which lets wide chip rows push the layout sideways. */
+fieldset {
+  min-width: 0;
+}
+
+button,
+[role='button'],
+select,
+label[for] {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 10px;
 }
 
 @utility field {
-  @apply w-full rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-base outline-none transition
-    focus:border-brand-600 focus:ring-2 focus:ring-brand-600/20
-    dark:border-stone-700 dark:bg-stone-900;
+  @apply min-h-12 w-full appearance-none rounded-xl border border-line bg-surface px-3.5 py-3 text-base text-fg transition-colors duration-150 outline-none placeholder:text-muted/70 focus:border-primary focus:ring-4 focus:ring-primary/15;
 }
 
 @utility label {
-  @apply mb-1.5 block text-sm font-medium text-stone-600 dark:text-stone-400;
+  @apply mb-2 block text-sm font-semibold text-fg;
+}
+
+@utility hint {
+  @apply mt-1.5 text-[13px] leading-snug text-muted;
 }
 
 @utility btn {
-  @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition
-    active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100;
+  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-[15px] font-semibold transition-colors duration-150 select-none disabled:cursor-not-allowed disabled:opacity-50;
 }
 @utility btn-primary {
-  @apply btn bg-brand-600 text-white hover:bg-brand-700;
+  @apply btn bg-primary text-on-primary hover:bg-primary-hover active:bg-primary-hover;
 }
 @utility btn-secondary {
-  @apply btn border border-stone-300 bg-white text-stone-800 hover:bg-stone-100
-    dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800;
+  @apply btn border border-line bg-surface text-fg hover:bg-surface-2 active:bg-surface-2;
 }
 @utility btn-ghost {
-  @apply btn text-stone-600 hover:bg-stone-200/60 dark:text-stone-300 dark:hover:bg-stone-800;
+  @apply btn text-muted hover:bg-surface-2 hover:text-fg active:bg-surface-2;
 }
 @utility btn-danger {
-  @apply btn text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40;
+  @apply btn text-danger hover:bg-danger-soft active:bg-danger-soft;
+}
+@utility icon-btn {
+  @apply inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg active:bg-surface-2 disabled:opacity-40;
 }
 
 @utility card {
-  @apply rounded-2xl border border-stone-200 bg-white p-4 shadow-sm dark:border-stone-800 dark:bg-stone-900;
+  @apply rounded-2xl border border-line bg-surface;
+}
+
+@utility section-title {
+  @apply mb-2.5 px-1 text-[13px] font-semibold tracking-wide text-muted uppercase;
+}
+
+@keyframes sheet-in {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-sheet { animation: sheet-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.animate-fade { animation: fade-in 180ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

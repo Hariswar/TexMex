@@ -95,14 +95,19 @@ export function formatTime(hhmm: string): string {
 export function describeSchedule(s: Pick<Schedule, 'rrule' | 'start_date' | 'send_time'>): string {
   const time = formatTime(s.send_time.slice(0, 5));
   if (!s.rrule) {
-    const date = new Date(`${s.start_date}T00:00:00`).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-    return `Once · ${date} at ${time}`;
+    const date = new Date(`${s.start_date}T00:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric' });
+    return `${date} · ${time}`;
   }
   const r = parseRRule(s.rrule);
-  if (r.freq === 'MONTHLY') return `Monthly on day ${Number(s.start_date.slice(8))} at ${time}`;
-  if (r.freq === 'DAILY') return r.interval > 1 ? `Every ${r.interval} days at ${time}` : `Every day at ${time}`;
+  if (r.freq === 'MONTHLY') return `Monthly, ${ordinal(Number(s.start_date.slice(8)))} · ${time}`;
+  if (r.freq === 'DAILY') return r.interval > 1 ? `Every ${r.interval} days · ${time}` : `Daily · ${time}`;
   const days = [...r.byday].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
-  if (days.length === 5 && WEEKDAY_SET.every((d) => days.includes(d))) return `Weekdays at ${time}`;
-  if (days.length === 7) return `Every day at ${time}`;
-  return `${days.map((d) => DAY_SHORT[d]).join(', ')} at ${time}`;
+  if (days.length === 5 && WEEKDAY_SET.every((d) => days.includes(d))) return `Weekdays · ${time}`;
+  if (days.length === 7) return `Daily · ${time}`;
+  return `${days.map((d) => DAY_SHORT[d]).join(', ')} · ${time}`;
+}
+
+function ordinal(n: number): string {
+  const suffix = n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th';
+  return `${n}${suffix}`;
 }

@@ -1,29 +1,23 @@
+import { Bell, CalendarX2, CheckCheck, CircleAlert, Clock, Inbox, SkipForward, type LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Badge, EmptyState, ErrorText, Spinner } from '../components/ui';
+import { Badge, EmptyState, ErrorText, IconBubble, Spinner, type Tone } from '../components/ui';
 import { upcomingRuns } from '../../supabase/functions/_shared/recurrence.ts';
 import { supabase } from '../lib/supabase';
 import type { DeliveryLog, DeliveryStatus, Schedule } from '../lib/types';
+import { dayWord } from './SchedulesPage';
 
-const STATUS: Record<DeliveryStatus, { label: string; color: 'green' | 'amber' | 'red' | 'gray' | 'blue' }> = {
-  sent: { label: 'Sent', color: 'green' },
-  reminded: { label: 'Reminded', color: 'blue' },
-  snoozed: { label: 'Snoozed', color: 'amber' },
-  skipped: { label: 'Skipped', color: 'gray' },
-  failed: { label: 'Failed', color: 'red' },
+const STATUS: Record<DeliveryStatus, { label: string; tone: Tone; icon: LucideIcon }> = {
+  sent: { label: 'Sent', tone: 'success', icon: CheckCheck },
+  reminded: { label: 'Reminded', tone: 'primary', icon: Bell },
+  snoozed: { label: 'Snoozed', tone: 'warn', icon: Clock },
+  skipped: { label: 'Skipped', tone: 'neutral', icon: SkipForward },
+  failed: { label: 'Failed', tone: 'danger', icon: CircleAlert },
 };
 
 interface Upcoming {
   at: Date;
   title: string;
   skipped: boolean;
-}
-
-function dayLabel(d: Date): string {
-  const today = new Date();
-  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-  if (d.toDateString() === today.toDateString()) return 'Today';
-  if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
-  return d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
 }
 
 export default function HistoryPage() {
@@ -66,26 +60,32 @@ export default function HistoryPage() {
 
   const grouped = new Map<string, Upcoming[]>();
   for (const u of upcoming) {
-    const key = dayLabel(u.at);
+    const key = dayWord(u.at);
     grouped.set(key, [...(grouped.get(key) ?? []), u]);
   }
 
   return (
-    <div className="space-y-6">
-      <section>
-        <h2 className="mb-2 text-sm font-semibold tracking-wide text-stone-500 uppercase dark:text-stone-400">Next 7 days</h2>
+    <div className="space-y-7">
+      <section aria-labelledby="upcoming">
+        <h2 id="upcoming" className="section-title">
+          Next 7 days
+        </h2>
         {upcoming.length === 0 ? (
-          <p className="text-sm text-stone-500">Nothing scheduled this week.</p>
+          <div className="card flex items-center gap-3 p-4 text-sm text-muted">
+            <IconBubble icon={CalendarX2} tone="neutral" size="sm" />
+            Nothing scheduled this week.
+          </div>
         ) : (
-          <div className="card space-y-3">
+          <div className="card divide-y divide-line overflow-hidden">
             {[...grouped].map(([day, items]) => (
-              <div key={day}>
-                <p className="mb-1 text-xs font-semibold text-stone-500 dark:text-stone-400">{day}</p>
-                <ul className="space-y-1">
+              <div key={day} className="flex gap-4 px-4 py-3">
+                <p className="w-20 shrink-0 pt-0.5 text-sm font-bold">{day}</p>
+                <ul className="min-w-0 flex-1 space-y-1.5">
                   {items.map((u, i) => (
-                    <li key={i} className={`flex items-center gap-3 text-sm ${u.skipped ? 'text-stone-400 line-through' : ''}`}>
-                      <span className="w-20 shrink-0 font-mono text-xs">{u.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
-                      <span className="truncate">{u.title}</span>
+                    <li key={i} className={`flex items-baseline gap-3 text-sm ${u.skipped ? 'text-muted line-through' : ''}`}>
+                      <span className="w-18 shrink-0 text-muted tabular-nums">{u.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+                      <span className="truncate font-medium">{u.title}</span>
+                      {u.skipped && <span className="sr-only">(skipped)</span>}
                     </li>
                   ))}
                 </ul>
@@ -95,32 +95,37 @@ export default function HistoryPage() {
         )}
       </section>
 
-      <section>
-        <h2 className="mb-2 text-sm font-semibold tracking-wide text-stone-500 uppercase dark:text-stone-400">History</h2>
+      <section aria-labelledby="history">
+        <h2 id="history" className="section-title">
+          History
+        </h2>
         {logs.length === 0 ? (
-          <EmptyState icon="📭" title="Nothing has fired yet">
-            Each send, reminder, skip, or failure shows up here.
+          <EmptyState icon={Inbox} title="Nothing has fired yet">
+            Every send, reminder, skip or failure will show up here.
           </EmptyState>
         ) : (
-          <ul className="space-y-2">
-            {logs.map((l) => (
-              <li key={l.id} className="card py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-sm font-medium">
-                    {l.schedules?.title || `Message ${l.schedules?.recipients?.display_name ?? ''}`}
-                  </p>
-                  <div className="flex shrink-0 gap-1">
-                    {l.opened_at && <Badge color="green">Opened</Badge>}
-                    <Badge color={STATUS[l.status].color}>{STATUS[l.status].label}</Badge>
+          <ul className="card divide-y divide-line overflow-hidden">
+            {logs.map((l) => {
+              const st = STATUS[l.status];
+              return (
+                <li key={l.id} className="flex gap-3 px-4 py-3.5">
+                  <IconBubble icon={st.icon} tone={st.tone} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="truncate font-semibold">{l.schedules?.title || `Message ${l.schedules?.recipients?.display_name ?? ''}`}</p>
+                      <Badge tone={st.tone}>{st.label}</Badge>
+                    </div>
+                    <p className="text-[13px] text-muted">
+                      {new Date(l.fired_at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                      {l.schedules?.recipients?.display_name && ` · to ${l.schedules.recipients.display_name}`}
+                      {l.opened_at && ' · opened'}
+                    </p>
+                    {l.message && <p className="mt-1.5 text-sm leading-snug">{l.message}</p>}
+                    {l.error && l.status !== 'sent' && <p className={`mt-1 text-[13px] ${l.status === 'failed' ? 'text-danger' : 'text-muted'}`}>{l.error}</p>}
                   </div>
-                </div>
-                <p className="text-xs text-stone-500 dark:text-stone-400">
-                  {new Date(l.fired_at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                </p>
-                {l.message && <p className="mt-1 text-sm">{l.message}</p>}
-                {l.error && <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">{l.error}</p>}
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
