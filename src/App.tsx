@@ -1,6 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
-import { CalendarClock, History, Settings, Users, WifiOff, type LucideIcon } from 'lucide-react';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { ChevronLeft, Settings, WifiOff } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { Spinner, useOnline } from './components/ui';
 import { supabase, supabaseConfigured } from './lib/supabase';
 import type { Profile, Recipient } from './lib/types';
@@ -10,14 +10,16 @@ import LoginPage from './pages/LoginPage';
 import SchedulesPage from './pages/SchedulesPage';
 import SettingsPage from './pages/SettingsPage';
 
-type Tab = 'schedules' | 'contacts' | 'history' | 'settings';
+export type View = 'home' | 'settings' | 'contacts' | 'history';
 
-const TABS: { id: Tab; label: string; title: string; icon: LucideIcon }[] = [
-  { id: 'schedules', label: 'Messages', title: 'Scheduled', icon: CalendarClock },
-  { id: 'contacts', label: 'Contacts', title: 'Contacts', icon: Users },
-  { id: 'history', label: 'Activity', title: 'Activity', icon: History },
-  { id: 'settings', label: 'Settings', title: 'Settings', icon: Settings },
-];
+const TITLES: Record<View, string> = {
+  home: 'TexMex',
+  settings: 'Settings',
+  contacts: 'People & groups',
+  history: 'History',
+};
+
+const PARENT: Record<View, View | null> = { home: null, settings: 'home', contacts: 'settings', history: 'settings' };
 
 export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -36,17 +38,14 @@ export default function App() {
 }
 
 function Shell({ session }: { session: Session }) {
-  const [tab, setTab] = useState<Tab>(() => (sessionStorage.getItem('texmex:tab') as Tab) || 'schedules');
+  const [view, setView] = useState<View>('home');
   const [profile, setProfile] = useState<Profile | null>(null);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
-  const [subtitle, setSubtitle] = useState<ReactNode>(null);
   const online = useOnline();
 
   useEffect(() => {
-    sessionStorage.setItem('texmex:tab', tab);
-    setSubtitle(null);
     window.scrollTo(0, 0);
-  }, [tab]);
+  }, [view]);
 
   useEffect(() => {
     (async () => {
@@ -71,17 +70,29 @@ function Shell({ session }: { session: Session }) {
     loadRecipients();
   }, [loadRecipients]);
 
-  const current = TABS.find((t) => t.id === tab)!;
+  const parent = PARENT[view];
 
   return (
-    <div className="mx-auto min-h-dvh max-w-2xl pb-[calc(6rem+env(safe-area-inset-bottom))]">
-      <header className="sticky top-0 z-20 bg-bg/90 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3 backdrop-blur-md">
-        <h1 className="text-[28px] leading-tight font-extrabold tracking-tight">{current.title}</h1>
-        {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
+    <div className="mx-auto min-h-dvh max-w-2xl pb-[calc(2rem+env(safe-area-inset-bottom))]">
+      <header className="sticky top-0 z-20 bg-bg/90 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 backdrop-blur-md">
+        <div className="flex min-h-12 items-center gap-1">
+          {parent && (
+            <button className="icon-btn -ml-2" onClick={() => setView(parent)} aria-label="Back">
+              <ChevronLeft className="size-6" />
+            </button>
+          )}
+          {view === 'home' && <img src="/icon.svg" alt="" className="mr-2 size-8" />}
+          <h1 className="flex-1 text-2xl font-extrabold tracking-tight">{TITLES[view]}</h1>
+          {view === 'home' && (
+            <button className="icon-btn -mr-2" onClick={() => setView('settings')} aria-label="Settings">
+              <Settings className="size-6" />
+            </button>
+          )}
+        </div>
         {!online && (
-          <p className="mt-3 flex items-center gap-2 rounded-xl bg-warn-soft px-3.5 py-2.5 text-sm font-medium text-warn" role="status">
+          <p className="mt-2 flex items-center gap-2 rounded-xl bg-warn-soft px-3.5 py-2.5 text-sm font-medium text-warn" role="status">
             <WifiOff className="size-4 shrink-0" aria-hidden />
-            You're offline. Drafts are kept on this device.
+            You're offline. Changes will save when you're back online.
           </p>
         )}
       </header>
@@ -89,42 +100,16 @@ function Shell({ session }: { session: Session }) {
       <main className="px-4 pt-2">
         {!profile ? (
           <Spinner />
-        ) : tab === 'schedules' ? (
-          <SchedulesPage profile={profile} recipients={recipients} onGoToContacts={() => setTab('contacts')} setSubtitle={setSubtitle} />
-        ) : tab === 'contacts' ? (
-          <ContactsPage recipients={recipients} onChange={loadRecipients} setSubtitle={setSubtitle} />
-        ) : tab === 'history' ? (
+        ) : view === 'home' ? (
+          <SchedulesPage profile={profile} recipients={recipients} onRecipientsChange={loadRecipients} />
+        ) : view === 'contacts' ? (
+          <ContactsPage recipients={recipients} onChange={loadRecipients} />
+        ) : view === 'history' ? (
           <HistoryPage />
         ) : (
-          <SettingsPage profile={profile} email={session.user.email ?? ''} onProfileChange={setProfile} />
+          <SettingsPage profile={profile} email={session.user.email ?? ''} recipientCount={recipients.length} onProfileChange={setProfile} onNavigate={setView} />
         )}
       </main>
-
-      <nav
-        aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md"
-      >
-        <div className="mx-auto grid max-w-2xl grid-cols-4 px-2">
-          {TABS.map((t) => {
-            const active = tab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                aria-current={active ? 'page' : undefined}
-                className={`flex min-h-16 flex-col items-center justify-center gap-1 text-xs font-semibold transition-colors duration-150 ${
-                  active ? 'text-primary-ink' : 'text-muted hover:text-fg'
-                }`}
-              >
-                <span className={`flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-200 ${active ? 'bg-primary-soft' : ''}`}>
-                  <t.icon className="size-5.5" strokeWidth={active ? 2.3 : 2} aria-hidden />
-                </span>
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
     </div>
   );
 }

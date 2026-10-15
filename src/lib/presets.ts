@@ -11,13 +11,13 @@ export interface Preset {
   send_time: string;
 }
 
-// {a|b|c} picks one variation at send time so recurring messages don't look robotic.
+// Plain text on purpose: personalisation ({first_name}, {Hi|Hey}) is opt-in under "More options".
 export const PRESETS: Preset[] = [
   {
     label: 'Good morning',
     icon: Sun,
     title: 'Good morning',
-    message_template: '{Good morning|Morning|GM} {first_name}! {☀️|🌞|Have a great {day}!}',
+    message_template: 'Good morning! Have a great day ☀️',
     kind: 'daily',
     send_time: '08:00',
   },
@@ -25,7 +25,7 @@ export const PRESETS: Preset[] = [
     label: 'Check in',
     icon: MessageCircle,
     title: 'Check in',
-    message_template: '{Hey|Hi} {first_name}, {how’s your week going?|how have you been?|what’s new with you?}',
+    message_template: 'Hey, how’s your week going?',
     kind: 'weekly',
     days: [0],
     send_time: '18:00',
@@ -34,7 +34,7 @@ export const PRESETS: Preset[] = [
     label: 'Weekend plans',
     icon: CalendarDays,
     title: 'Weekend plans',
-    message_template: '{Free this weekend?|Any plans this weekend?|Want to hang out this weekend?}',
+    message_template: 'Any plans this weekend?',
     kind: 'weekly',
     days: [5],
     send_time: '12:00',
@@ -43,7 +43,7 @@ export const PRESETS: Preset[] = [
     label: 'Bill reminder',
     icon: Receipt,
     title: 'Bill reminder',
-    message_template: 'Hey {first_name}, reminder that bills are due. {Can you send your share?|Mind sending your part today?}',
+    message_template: 'Hey, reminder that bills are due. Can you send your share?',
     kind: 'monthly',
     send_time: '10:00',
   },
@@ -51,7 +51,7 @@ export const PRESETS: Preset[] = [
     label: 'Workout invite',
     icon: Dumbbell,
     title: 'Workout invite',
-    message_template: '{Gym at 2?|Working out today at 2?|Down for a workout at 2?}',
+    message_template: 'Gym at 2?',
     kind: 'weekdays',
     send_time: '14:00',
   },
@@ -59,7 +59,7 @@ export const PRESETS: Preset[] = [
     label: 'One-time reminder',
     icon: AlarmClock,
     title: 'Reminder',
-    message_template: 'Hey {first_name}, just a reminder: ',
+    message_template: 'Just a reminder: ',
     kind: 'once',
     send_time: '09:00',
   },

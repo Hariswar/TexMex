@@ -1,15 +1,29 @@
-import { BellOff, BellRing, ChevronDown, Globe, LogOut, Share, Smartphone, type LucideIcon } from 'lucide-react';
+import { BellOff, BellRing, ChevronDown, ChevronRight, Globe, History, LogOut, Share, Smartphone, Users, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Avatar, ErrorText, IconBubble, Switch, type Tone } from '../components/ui';
 import { nextRunAt } from '../../supabase/functions/_shared/recurrence.ts';
-import { disablePush, enablePush, getPushState, isIos, type PushState } from '../lib/push';
+import { disablePush, enablePush, getPushState, isIos, sendTestPush, type PushState } from '../lib/push';
 import { supabase } from '../lib/supabase';
 import type { Profile, Schedule } from '../lib/types';
+import type { View } from '../App';
 
 interface Props {
   profile: Profile;
   email: string;
+  recipientCount: number;
   onProfileChange: (p: Profile) => void;
+  onNavigate: (v: View) => void;
+}
+
+function NavRow({ icon, title, detail, onClick }: { icon: LucideIcon; title: string; detail?: string; onClick: () => void }) {
+  return (
+    <button className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors duration-150 hover:bg-surface-2 active:bg-surface-2" onClick={onClick}>
+      <IconBubble icon={icon} tone="neutral" />
+      <span className="min-w-0 flex-1 font-semibold">{title}</span>
+      {detail && <span className="text-sm text-muted">{detail}</span>}
+      <ChevronRight className="size-5 shrink-0 text-muted" aria-hidden />
+    </button>
+  );
 }
 
 const PUSH: Record<PushState, { title: string; body: string; icon: LucideIcon; tone: Tone }> = {
@@ -18,6 +32,7 @@ const PUSH: Record<PushState, { title: string; body: string; icon: LucideIcon; t
   denied: { title: 'Notifications blocked', body: 'Allow notifications for this site in your browser or system settings, then reload.', icon: BellOff, tone: 'danger' },
   unsupported: { title: 'Not supported', body: "This browser can't receive web push notifications.", icon: BellOff, tone: 'neutral' },
   'needs-install': { title: 'Add to Home Screen first', body: 'On iPhone, notifications only work for apps on the Home Screen.', icon: Smartphone, tone: 'warn' },
+  'no-worker': { title: 'Not ready yet', body: "The app's background service didn't start. Reload the page.", icon: BellOff, tone: 'warn' },
 };
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
@@ -29,11 +44,12 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-export default function SettingsPage({ profile, email, onProfileChange }: Props) {
+export default function SettingsPage({ profile, email, recipientCount, onProfileChange, onNavigate }: Props) {
   const [push, setPush] = useState<PushState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [tzMessage, setTzMessage] = useState('');
+  const [test, setTest] = useState<{ state: 'idle' | 'sending' | 'sent' | 'error'; text?: string }>({ state: 'idle' });
 
   const timezones = useMemo(() => {
     try {
@@ -58,6 +74,16 @@ export default function SettingsPage({ profile, email, onProfileChange }: Props)
     }
     setPush(await getPushState());
     setBusy(false);
+  }
+
+  async function sendTest() {
+    setTest({ state: 'sending' });
+    try {
+      const devices = await sendTestPush();
+      setTest({ state: 'sent', text: `Sent to ${devices} device${devices === 1 ? '' : 's'}. It should pop up in a few seconds.` });
+    } catch (e) {
+      setTest({ state: 'error', text: e instanceof Error ? e.message : String(e) });
+    }
   }
 
   async function changeTimezone(timezone: string) {
@@ -113,9 +139,27 @@ export default function SettingsPage({ profile, email, onProfileChange }: Props)
             </li>
           </ol>
         )}
+        {push === 'on' && (
+          <div className="space-y-2 px-4 py-3.5">
+            <button className="btn-secondary w-full" onClick={sendTest} disabled={test.state === 'sending'}>
+              <BellRing className="size-4.5" aria-hidden /> {test.state === 'sending' ? 'Sending…' : 'Send test notification'}
+            </button>
+            {test.text && (
+              <p role="status" className={`text-sm leading-snug ${test.state === 'error' ? 'text-danger' : 'text-success'}`}>
+                {test.text}
+                {test.state === 'sent' && " Nothing showed up? Check that your computer or phone allows notifications from your browser."}
+              </p>
+            )}
+          </div>
+        )}
         {isIos() && push === 'on' && (
           <p className="px-4 py-3 text-[13px] text-muted">iPhone doesn't show notification buttons. Tap the notification to open WhatsApp.</p>
         )}
+      </Group>
+
+      <Group title="Your stuff">
+        <NavRow icon={Users} title="People & groups" detail={String(recipientCount)} onClick={() => onNavigate('contacts')} />
+        <NavRow icon={History} title="History" detail="What was sent" onClick={() => onNavigate('history')} />
       </Group>
 
       <Group title="Time zone">

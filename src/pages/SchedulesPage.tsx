@@ -1,9 +1,9 @@
-import { Bell, CalendarClock, PencilLine, Plus, Send, UserPlus, Zap } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Avatar, Badge, EmptyState, ErrorText, Spinner, Switch } from '../components/ui';
+import { Bell, BellOff, Plus, Repeat, Smartphone } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Avatar, ErrorText, IconBubble, Spinner, Switch } from '../components/ui';
 import { renderTemplate, templateVars } from '../../supabase/functions/_shared/template.ts';
 import { nextRunAt } from '../../supabase/functions/_shared/recurrence.ts';
-import { whatsappLink } from '../../supabase/functions/_shared/whatsapp.ts';
+import { enablePush, getPushState, type PushState } from '../lib/push';
 import { PRESETS, type Preset } from '../lib/presets';
 import { describeSchedule, emptyDraft, scheduleToDraft, type ScheduleDraft } from '../lib/scheduleForm';
 import { supabase } from '../lib/supabase';
@@ -13,8 +13,7 @@ import ScheduleEditor from './ScheduleEditor';
 interface Props {
   profile: Profile;
   recipients: Recipient[];
-  onGoToContacts: () => void;
-  setSubtitle: (node: ReactNode) => void;
+  onRecipientsChange: () => Promise<void> | void;
 }
 
 export function relativeTime(iso: string): string {
@@ -35,12 +34,23 @@ export function dayWord(d: Date): string {
   return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-function sampleMessage(s: Schedule, r: Recipient | undefined): string {
-  const at = s.next_run_at ? new Date(s.next_run_at) : new Date();
-  return renderTemplate(s.message_template, templateVars(r?.display_name ?? 'there', at, s.timezone), () => 0);
+function whenText(s: Schedule): string {
+  if (!s.active) return s.rrule || s.next_run_at ? 'Paused' : 'Sent';
+  if (!s.next_run_at) return '';
+  const at = new Date(s.next_run_at);
+  return `${dayWord(at)}, ${at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
 }
 
-export default function SchedulesPage({ profile, recipients, onGoToContacts, setSubtitle }: Props) {
+/** "Daily", "Weekdays", "Sun", … — the pattern without the time, which whenText already shows. */
+function repeatText(s: Schedule): string {
+  if (!s.rrule) return 'One time';
+  const pattern = describeSchedule(s).split(' · ').slice(0, -1).join(' · ');
+  if (pattern.startsWith('Monthly')) return 'Monthly';
+  if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/.test(pattern)) return `Every ${pattern}`;
+  return pattern;
+}
+
+export default function SchedulesPage({ profile, recipients, onRecipientsChange }: Props) {
   const [schedules, setSchedules] = useState<Schedule[] | null>(null);
   const [editing, setEditing] = useState<ScheduleDraft | null>(null);
   const [error, setError] = useState('');
@@ -60,17 +70,6 @@ export default function SchedulesPage({ profile, recipients, onGoToContacts, set
   }, [load]);
 
   const byId = useMemo(() => new Map(recipients.map((r) => [r.id, r])), [recipients]);
-  const upNext = schedules?.find((s) => s.active && s.next_run_at);
-  const activeCount = schedules?.filter((s) => s.active).length ?? 0;
-
-  useEffect(() => {
-    if (!schedules) return;
-    setSubtitle(
-      schedules.length === 0
-        ? 'Nothing scheduled yet'
-        : `${activeCount} active${upNext?.next_run_at ? ` · next ${relativeTime(upNext.next_run_at)}` : ''}`,
-    );
-  }, [schedules, activeCount, upNext, setSubtitle]);
 
   function startNew(preset?: Preset) {
     const draft = emptyDraft(recipients[0]?.id ?? '');
@@ -83,7 +82,7 @@ export default function SchedulesPage({ profile, recipients, onGoToContacts, set
     setError('');
     const next = resume ? nextRunAt(s, new Date()) : null;
     if (resume && !next) {
-      setError('That one-time message is in the past. Open it to pick a new time.');
+      setError('That message already went out. Open it to pick a new time.');
       return;
     }
     // Optimistic update so the switch responds instantly.
@@ -96,117 +95,65 @@ export default function SchedulesPage({ profile, recipients, onGoToContacts, set
     load();
   }
 
-  function sendNow(s: Schedule) {
-    const r = byId.get(s.recipient_id);
-    if (!r) return;
-    const message = renderTemplate(s.message_template, templateVars(r.display_name, new Date(), s.timezone));
-    window.open(whatsappLink(r, message), '_blank', 'noopener');
-  }
-
   if (!schedules) return error ? <ErrorText>{error}</ErrorText> : <Spinner />;
 
-  if (!recipients.length) {
-    return (
-      <EmptyState icon={UserPlus} title="Add who you message first">
-        <p>Add a person or a group, then schedule any message to them: reminders, check-ins, greetings, anything.</p>
-        <button className="btn-primary mt-5" onClick={onGoToContacts}>
-          <UserPlus className="size-4.5" aria-hidden /> Add a contact
-        </button>
-      </EmptyState>
-    );
-  }
-
   return (
-    <div className="space-y-7 pb-20">
-      {upNext?.next_run_at && <UpNextCard s={upNext} r={byId.get(upNext.recipient_id)} onSend={() => sendNow(upNext)} onEdit={() => setEditing(scheduleToDraft(upNext))} />}
-
-      <section aria-labelledby="quick-start">
-        <h2 id="quick-start" className="section-title">
-          Quick start
-        </h2>
-        <div className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 scrollbar-none">
-          {PRESETS.map((p) => (
-            <button
-              key={p.label}
-              className="flex min-h-11 shrink-0 snap-start items-center gap-2 rounded-full border border-line bg-surface py-2 pr-4 pl-2.5 text-sm font-semibold transition-colors duration-150 hover:bg-surface-2"
-              onClick={() => startNew(p)}
-            >
-              <span className="flex size-7 items-center justify-center rounded-full bg-primary-soft text-primary-ink">
-                <p.icon className="size-4" aria-hidden />
-              </span>
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </section>
-
+    <div className="space-y-5 pb-24">
+      {schedules.length > 0 && <NotificationBanner />}
       <ErrorText>{error}</ErrorText>
 
-      <section aria-labelledby="all-messages">
-        <h2 id="all-messages" className="section-title">
-          All messages
-        </h2>
-        {schedules.length === 0 ? (
-          <EmptyState icon={CalendarClock} title="No scheduled messages yet">
-            Pick a quick start above, or tap <strong className="text-fg">New</strong> to write your own.
-          </EmptyState>
-        ) : (
-          <ul className="card divide-y divide-line overflow-hidden">
-            {schedules.map((s) => {
-              const r = byId.get(s.recipient_id);
-              const name = s.title || `Message ${r?.display_name ?? ''}`;
-              const done = !s.active && !s.rrule && !s.next_run_at;
-              return (
-                <li key={s.id} className="flex items-center gap-1 pr-2">
-                  <button
-                    className="flex min-w-0 flex-1 items-center gap-3 py-3.5 pl-4 text-left transition-colors duration-150 active:bg-surface-2"
-                    onClick={() => setEditing(scheduleToDraft(s))}
-                    aria-label={`Edit ${name}`}
-                  >
-                    <span className={s.active ? '' : 'opacity-50'}>
-                      <Avatar name={r?.display_name ?? '?'} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2">
-                        <span className={`truncate font-semibold ${s.active ? '' : 'text-muted'}`}>{name}</span>
-                        {done ? <Badge>Done</Badge> : !s.active && <Badge tone="warn">Paused</Badge>}
-                      </span>
-                      <span className="block truncate text-sm font-medium">{describeSchedule(s)}</span>
-                      <span className="mt-0.5 flex items-center gap-1.5 truncate text-[13px] text-muted">
-                        {s.delivery_mode === 'telegram' ? (
-                          <Zap className="size-3.5 shrink-0 text-info" aria-hidden />
-                        ) : (
-                          <Bell className="size-3.5 shrink-0 text-primary-ink" aria-hidden />
-                        )}
-                        <span className="truncate">
-                          {r?.display_name ?? 'Unknown'} · {s.delivery_mode === 'telegram' ? 'Telegram auto' : 'Reminder'}
-                        </span>
+      {schedules.length === 0 ? (
+        <Welcome onNew={startNew} />
+      ) : (
+        <ul className="space-y-3">
+          {schedules.map((s) => {
+            const r = byId.get(s.recipient_id);
+            const message = renderTemplate(s.message_template, templateVars(r?.display_name ?? 'there', new Date(s.next_run_at ?? Date.now()), s.timezone), () => 0);
+            const finished = !s.active && !s.rrule && !s.next_run_at;
+            return (
+              <li key={s.id} className={`card flex items-start gap-1 pr-1.5 ${s.active ? '' : 'opacity-70'}`}>
+                <button
+                  className="flex min-w-0 flex-1 gap-3 rounded-2xl p-4 pr-1 text-left transition-colors duration-150 active:bg-surface-2"
+                  onClick={() => setEditing(scheduleToDraft(s))}
+                  aria-label={`Edit message to ${r?.display_name ?? 'unknown'}`}
+                >
+                  <Avatar name={r?.display_name ?? '?'} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-bold">{r?.display_name ?? 'Unknown'}</span>
+                    <span className="mt-0.5 line-clamp-2 block text-[15px] leading-snug text-fg/85">{message}</span>
+                    <span className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[13px] font-semibold whitespace-nowrap">
+                      <span className={s.active ? 'text-primary-ink' : 'text-muted'}>{whenText(s)}</span>
+                      <span className="text-muted" aria-hidden>·</span>
+                      <span className="inline-flex items-center gap-1 font-medium text-muted">
+                        <Repeat className="size-3.5" aria-hidden />
+                        {repeatText(s)}
                       </span>
                     </span>
-                  </button>
-                  <button className="icon-btn" onClick={() => sendNow(s)} aria-label={`Send ${name} now in WhatsApp`} title="Send now">
-                    <Send className="size-5" />
-                  </button>
-                  {!done && <Switch checked={s.active} onChange={(v) => setActive(s, v)} label={`${name} active`} />}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+                  </span>
+                </button>
+                {!finished && (
+                  <div className="pt-2.5">
+                    <Switch checked={s.active} onChange={(v) => setActive(s, v)} label={`Message to ${r?.display_name ?? 'unknown'} on`} />
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
-      <button
-        className="btn-primary fixed right-4 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] z-20 h-14 rounded-2xl px-5 shadow-lg shadow-primary/25 sm:right-[max(1rem,calc(50%-20rem))]"
-        onClick={() => startNew()}
-      >
-        <Plus className="size-5" aria-hidden /> New
-      </button>
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 bg-linear-to-t from-bg via-bg/90 to-transparent px-4 pt-8 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <button className="btn-primary pointer-events-auto mx-auto flex min-h-14 w-full max-w-md rounded-2xl text-base shadow-lg shadow-primary/25" onClick={() => startNew()}>
+          <Plus className="size-5" aria-hidden /> New message
+        </button>
+      </div>
 
       {editing && (
         <ScheduleEditor
           initial={editing}
           profile={profile}
           recipients={recipients}
+          onRecipientsChange={onRecipientsChange}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -218,38 +165,87 @@ export default function SchedulesPage({ profile, recipients, onGoToContacts, set
   );
 }
 
-function UpNextCard({ s, r, onSend, onEdit }: { s: Schedule; r: Recipient | undefined; onSend: () => void; onEdit: () => void }) {
-  const at = new Date(s.next_run_at!);
+function Welcome({ onNew }: { onNew: (p?: Preset) => void }) {
+  const ideas = PRESETS.filter((p) => ['Good morning', 'Check in', 'Bill reminder', 'One-time reminder'].includes(p.label));
   return (
-    <section aria-label="Up next" className="card overflow-hidden">
-      <div className="flex items-start justify-between gap-3 px-4 pt-4">
-        <div>
-          <p className="text-[13px] font-semibold tracking-wide text-primary-ink uppercase">Up next · {relativeTime(s.next_run_at!)}</p>
-          <p className="mt-1 text-3xl font-extrabold tracking-tight">
-            {at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-          </p>
-          <p className="text-sm font-medium text-muted">{dayWord(at)}</p>
+    <div className="space-y-6">
+      <div className="card px-5 py-7 text-center">
+        <div className="flex justify-center">
+          <IconBubble icon={Bell} size="lg" />
         </div>
-        <div className="flex min-w-0 items-center gap-2 rounded-full bg-surface-2 py-1 pr-3 pl-1">
-          <Avatar name={r?.display_name ?? '?'} size="sm" />
-          <span className="truncate text-sm font-semibold">{r?.display_name}</span>
-        </div>
+        <h2 className="mt-4 text-xl font-extrabold">Never forget to text someone</h2>
+        <p className="mx-auto mt-2 max-w-xs text-[15px] leading-relaxed text-muted">
+          Write a message and pick a time. When it's time, you get a notification. Tap it and send.
+        </p>
       </div>
 
-      <div className="mx-4 mt-4 rounded-2xl bg-surface-2 p-3">
-        <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-tr-md bg-bubble px-3.5 py-2 text-[15px] leading-snug text-bubble-fg shadow-sm">
-          {sampleMessage(s, r)}
+      <section>
+        <h2 className="section-title">Need an idea?</h2>
+        <div className="grid grid-cols-2 gap-3">
+          {ideas.map((p) => (
+            <button
+              key={p.label}
+              onClick={() => onNew(p)}
+              className="card flex flex-col items-start gap-3 p-4 text-left transition-colors duration-150 hover:bg-surface-2 active:bg-surface-2"
+            >
+              <IconBubble icon={p.icon} size="sm" />
+              <span className="font-semibold">{p.label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// Reminders can only reach devices that turned notifications on. Without this banner a missing
+// subscription only shows up as "Failed" entries in History.
+function NotificationBanner() {
+  const [state, setState] = useState<PushState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    getPushState().then(setState).catch(() => setState('unsupported'));
+  }, []);
+
+  if (!state || state === 'on') return null;
+
+  async function turnOn() {
+    setBusy(true);
+    setError('');
+    try {
+      await enablePush();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+    setState(await getPushState());
+    setBusy(false);
+  }
+
+  const copy: Record<Exclude<PushState, 'on'>, string> = {
+    off: "You won't get reminders on this device until notifications are on.",
+    denied: 'Notifications are blocked for this site. Allow them in your browser or phone settings, then reload.',
+    'needs-install': 'On iPhone, tap Share → “Add to Home Screen”, open TexMex from there, then turn on notifications.',
+    'no-worker': "The app's background service didn't start, so reminders can't arrive. Reload the page.",
+    unsupported: "This browser can't show notifications. Try Chrome, or Safari on iPhone from the Home Screen.",
+  };
+
+  return (
+    <section role="alert" className="card border-warn/40 bg-warn-soft p-4">
+      <div className="flex gap-3">
+        <IconBubble icon={state === 'needs-install' ? Smartphone : BellOff} tone="warn" />
+        <div className="min-w-0 flex-1">
+          <p className="font-bold text-fg">Turn on reminders</p>
+          <p className="mt-0.5 text-sm leading-snug text-fg/80">{copy[state]}</p>
+          {error && <p className="mt-1.5 text-sm font-medium text-danger">{error}</p>}
         </div>
       </div>
-
-      <div className="flex gap-2 p-4">
-        <button className="btn-primary flex-1" onClick={onSend}>
-          <Send className="size-4.5" aria-hidden /> Send now
+      {state === 'off' && (
+        <button className="btn-primary mt-3 w-full" onClick={turnOn} disabled={busy}>
+          <Bell className="size-4.5" aria-hidden /> {busy ? 'Turning on…' : 'Turn on notifications'}
         </button>
-        <button className="btn-secondary" onClick={onEdit}>
-          <PencilLine className="size-4.5" aria-hidden /> Edit
-        </button>
-      </div>
+      )}
     </section>
   );
 }

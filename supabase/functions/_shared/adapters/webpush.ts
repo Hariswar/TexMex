@@ -1,3 +1,4 @@
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3.6.7';
 import { whatsappLink } from '../whatsapp.ts';
 import type { DeliveryAdapter, DeliveryContext } from './types.ts';
@@ -14,33 +15,17 @@ function configure() {
   configured = true;
 }
 
-/** Sends the reminder push to every device the user enabled. Shared by snooze re-delivery. */
-export async function sendReminderPush(ctx: DeliveryContext): Promise<void> {
+/** Pushes `payload` to every device of `userId`, pruning expired subscriptions. Returns how many got it. */
+export async function pushToUser(db: SupabaseClient, userId: string, payload: Record<string, unknown>): Promise<number> {
   configure();
-  const { db, schedule, recipient, message, logId, actionToken } = ctx;
-
-  const { data: subs, error } = await db
-    .from('push_subscriptions')
-    .select('id, endpoint, p256dh, auth')
-    .eq('user_id', schedule.user_id);
+  const { data: subs, error } = await db.from('push_subscriptions').select('id, endpoint, p256dh, auth').eq('user_id', userId);
   if (error) throw new Error(`Loading push subscriptions: ${error.message}`);
-  if (!subs?.length) throw new Error('No devices have notifications enabled (Settings → Enable notifications)');
+  if (!subs?.length) throw new Error('No devices have notifications turned on. Open TexMex and turn on reminders.');
 
-  const payload = JSON.stringify({
-    title: schedule.title || `Message ${recipient.display_name}`,
-    body: message,
-    url: whatsappLink(recipient, message),
-    isGroup: recipient.type === 'group',
-    recipientName: recipient.display_name,
-    logId,
-    token: actionToken,
-    actionUrl: `${Deno.env.get('SUPABASE_URL')}/functions/v1/action`,
-    tag: `schedule-${schedule.id}`,
-  });
-
+  const body = JSON.stringify(payload);
   const results = await Promise.allSettled(
     subs.map((s) =>
-      webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, {
+      webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, body, {
         TTL: 60 * 60,
         urgency: 'high',
       }),
@@ -54,10 +39,28 @@ export async function sendReminderPush(ctx: DeliveryContext): Promise<void> {
   });
   if (expired.length) await db.from('push_subscriptions').delete().in('id', expired);
 
-  if (!results.some((r) => r.status === 'fulfilled')) {
+  const sent = results.filter((r) => r.status === 'fulfilled').length;
+  if (!sent) {
     const reason = results.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
     throw new Error(`Push failed on all devices: ${reason?.reason?.body ?? reason?.reason?.message ?? 'unknown'}`);
   }
+  return sent;
+}
+
+/** Sends the reminder push to every device the user enabled. Shared by snooze re-delivery. */
+export async function sendReminderPush(ctx: DeliveryContext): Promise<void> {
+  const { db, schedule, recipient, message, logId, actionToken } = ctx;
+  await pushToUser(db, schedule.user_id, {
+    title: schedule.title || `Message ${recipient.display_name}`,
+    body: message,
+    url: whatsappLink(recipient, message),
+    isGroup: recipient.type === 'group',
+    recipientName: recipient.display_name,
+    logId,
+    token: actionToken,
+    actionUrl: `${Deno.env.get('SUPABASE_URL')}/functions/v1/action`,
+    tag: `schedule-${schedule.id}`,
+  });
 }
 
 export const webPushReminderAdapter: DeliveryAdapter = {

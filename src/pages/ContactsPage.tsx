@@ -1,5 +1,5 @@
 import { ChevronRight, Info, Phone, Send, Trash2, User, UserPlus, Users } from 'lucide-react';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Avatar, Badge, EmptyState, ErrorText, Sheet } from '../components/ui';
 import { supabase } from '../lib/supabase';
 import type { Recipient, RecipientType } from '../lib/types';
@@ -7,21 +7,16 @@ import type { Recipient, RecipientType } from '../lib/types';
 interface Props {
   recipients: Recipient[];
   onChange: () => void;
-  setSubtitle: (node: ReactNode) => void;
 }
 
 type Draft = Pick<Recipient, 'type' | 'display_name'> & { id?: string; phone: string; telegram_chat_id: string };
 
 const empty: Draft = { type: 'individual', display_name: '', phone: '', telegram_chat_id: '' };
 
-export default function ContactsPage({ recipients, onChange, setSubtitle }: Props) {
+export default function ContactsPage({ recipients, onChange }: Props) {
   const [editing, setEditing] = useState<Draft | null>(null);
   const people = recipients.filter((r) => r.type === 'individual');
   const groups = recipients.filter((r) => r.type === 'group');
-
-  useEffect(() => {
-    setSubtitle(recipients.length ? `${people.length} ${people.length === 1 ? 'person' : 'people'} · ${groups.length} ${groups.length === 1 ? 'group' : 'groups'}` : null);
-  }, [recipients.length, people.length, groups.length, setSubtitle]);
 
   const open = (r: Recipient) =>
     setEditing({ id: r.id, type: r.type, display_name: r.display_name, phone: r.phone ?? '', telegram_chat_id: r.telegram_chat_id ?? '' });
